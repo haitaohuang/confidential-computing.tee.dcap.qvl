@@ -56,20 +56,22 @@ std::string advisoryIdsToString(const std::set<std::string>& advisoryIds)
     return advisoryIdsStr;
 }
 
-VerificationCollateralInfo::VerificationCollateralInfo() : _id(1), _version(2), _isFilled(false) {}
+VerificationCollateralInfo::VerificationCollateralInfo(uint16_t version) : _id(1), _version(version), _isFilled(false) {}
 
-void VerificationCollateralInfo::addLaunchInfo(const std::time_t& tcbDate, const std::vector<std::string>& advisoryIds, const std::string& tcbStatus)
+void VerificationCollateralInfo::addLaunchInfo(const std::time_t& tcbDate, const std::vector<std::string>& advisoryIds, const std::string& tcbStatus, const ComponentTcbEvaluation& components)
 {
     _launchTcbDate = tcbDate;
     _launchAdvisoryIds.insert(advisoryIds.begin(), advisoryIds.end());
     _launchTcbStatus = tcbStatus;
+    _launchComponents = components;
 }
 
-void VerificationCollateralInfo::addCurrentInfo(const std::time_t& tcbDate, const std::vector<std::string>& advisoryIds, const std::string& tcbStatus)
+void VerificationCollateralInfo::addCurrentInfo(const std::time_t& tcbDate, const std::vector<std::string>& advisoryIds, const std::string& tcbStatus, const ComponentTcbEvaluation& components)
 {
     _currentTcbDate = tcbDate;
     _currentAdvisoryIds.insert(advisoryIds.begin(), advisoryIds.end());
     _currentTcbStatus = tcbStatus;
+    _currentComponents = components;
 }
 
 void VerificationCollateralInfo::addTcbInfoData(const parser::json::TcbInfo& tcbInfo)
@@ -77,6 +79,7 @@ void VerificationCollateralInfo::addTcbInfoData(const parser::json::TcbInfo& tcb
     _issueDates.push_back(tcbInfo.getIssueDate());
     _nextUpdates.push_back(tcbInfo.getNextUpdate());
     _tcbEvalNumbers.push_back(tcbInfo.getTcbEvaluationDataNumber());
+    _tcbInfoEvalNumber = tcbInfo.getTcbEvaluationDataNumber();
 }
 
 void VerificationCollateralInfo::addEnclaveIdentityData(const parser::json::EnclaveIdentity& enclaveIdentity)
@@ -84,10 +87,16 @@ void VerificationCollateralInfo::addEnclaveIdentityData(const parser::json::Encl
     _issueDates.push_back(enclaveIdentity.getIssueDate());
     _nextUpdates.push_back(enclaveIdentity.getNextUpdate());
     _tcbEvalNumbers.push_back(enclaveIdentity.getTcbEvaluationDataNumber());
+    _qeEvalNumber = enclaveIdentity.getTcbEvaluationDataNumber();
 }
 
 std::vector<uint8_t> VerificationCollateralInfo::aggregateDataAndParseToVec() {
-    std::vector<uint8_t> byteVec(constants::VERIFICATION_COLLATERAL_INFO_SIZE_BYTE_LEN, 0);
+    if (_version != 2 && _version != 3)
+    {
+        throw VerCollInfoSizeException("Unsupported verification collateral info version");
+    }
+    std::vector<uint8_t> byteVec(_version == 3 ? constants::VERIFICATION_COLLATERAL_INFO_V3_SIZE_BYTE_LEN
+                                             : constants::VERIFICATION_COLLATERAL_INFO_SIZE_BYTE_LEN, 0);
     size_t offset = 0;
 
     if(_issueDates.empty() || _nextUpdates.empty() || _tcbEvalNumbers.empty())
@@ -147,6 +156,38 @@ std::vector<uint8_t> VerificationCollateralInfo::aggregateDataAndParseToVec() {
     }
     std::memcpy(&byteVec[offset], _currentTcbStatus.c_str(), _currentTcbStatus.size());
     offset+=constants::VERIFICATION_COLLATERAL_INFO_TCB_STATUS_BYTE_LEN;
+
+    if (_version == 3)
+    {
+        auto appendLE = [&](uint64_t value, size_t size) {
+            for (size_t i = 0; i < size; ++i)
+            {
+                byteVec[offset++] = static_cast<uint8_t>(value >> (8 * i));
+            }
+        };
+        for (const auto& evaluation : {_launchComponents, _currentComponents})
+        {
+            appendLE(evaluation.flags, 4);
+            for (const auto& component : {evaluation.platform, evaluation.tdxModule, evaluation.qe})
+            {
+                appendLE(static_cast<uint64_t>(component.date), 8);
+                appendLE(static_cast<uint32_t>(component.status), 4);
+            }
+            for (const auto svn : evaluation.sgxTcbComponents)
+            {
+                appendLE(svn, 1);
+            }
+            for (const auto svn : evaluation.tdxTcbComponents)
+            {
+                appendLE(svn, 1);
+            }
+            appendLE(evaluation.pceSvn, 2);
+            appendLE(evaluation.tdxModuleSvn, 1);
+            appendLE(evaluation.qeSvn, 2);
+        }
+        appendLE(_tcbInfoEvalNumber, 4);
+        appendLE(_qeEvalNumber, 4);
+    }
 
     if (offset != byteVec.size())
     {

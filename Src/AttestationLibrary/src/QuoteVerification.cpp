@@ -359,8 +359,9 @@ Status sgxAttestationVerifyQuote(const uint8_t* rawQuote, uint32_t quoteSize, co
     return sgxAttestationVerifyQuoteEx(rawQuote, quoteSize, pemPckCertificate, pckCrl, tcbInfoJson, qeIdentityJson, nullptr, 0);
 }
 
-Status sgxAttestationVerifyQuoteEx(const uint8_t* rawQuote, uint32_t quoteSize, const char *pemPckCertificate, const char* pckCrl, const char* tcbInfoJson,
-                                   const char* qeIdentityJson, uint8_t* verificationCollateralInfo, uint32_t verificationCollateralInfoSize)
+static Status verifyQuoteWithCollateralInfo(const uint8_t* rawQuote, uint32_t quoteSize, const char *pemPckCertificate, const char* pckCrl, const char* tcbInfoJson,
+                                            const char* qeIdentityJson, uint8_t* verificationCollateralInfo, uint32_t verificationCollateralInfoSize,
+                                            uint16_t version)
 {
     /// 4.1.2.5.1
     if(!rawQuote ||
@@ -377,8 +378,10 @@ Status sgxAttestationVerifyQuoteEx(const uint8_t* rawQuote, uint32_t quoteSize, 
     const std::vector<uint8_t> vecQuote(rawQuote, std::next(rawQuote, static_cast<std::ptrdiff_t>(quoteSize)));
 
     /// 4.1.2.5.2
+    const auto resultSize = version == 3 ? ::constants::VERIFICATION_COLLATERAL_INFO_V3_SIZE_BYTE_LEN
+                                        : ::constants::VERIFICATION_COLLATERAL_INFO_SIZE_BYTE_LEN;
     if ((verificationCollateralInfo == nullptr && verificationCollateralInfoSize != 0) ||
-        (verificationCollateralInfo && verificationCollateralInfoSize < ::constants::VERIFICATION_COLLATERAL_INFO_SIZE_BYTE_LEN))
+        (verificationCollateralInfo && verificationCollateralInfoSize < resultSize))
     {
         return STATUS_INVALID_PARAMETER;
     }
@@ -442,7 +445,7 @@ Status sgxAttestationVerifyQuoteEx(const uint8_t* rawQuote, uint32_t quoteSize, 
     try
     {
         auto pckCert = dcap::parser::x509::PckCertificate::parse(pemPckCertificate);
-        auto verCollInfoDataObj = dcap::VerificationCollateralInfo();
+        auto verCollInfoDataObj = dcap::VerificationCollateralInfo(version);
         const auto status = dcap::QuoteVerifier{}.verify(quote, pckCert, pckCrlStore, tcbInfo, enclaveIdentity.get(), dcap::EnclaveReportVerifier(), verCollInfoDataObj);
 
         /// 4.1.2.5.19
@@ -452,7 +455,7 @@ Status sgxAttestationVerifyQuoteEx(const uint8_t* rawQuote, uint32_t quoteSize, 
             std::memcpy(verificationCollateralInfo, verCollInfoVec.data(),
                         std::min({static_cast<size_t>(verificationCollateralInfoSize),
                                   verCollInfoVec.size(),
-                                  static_cast<size_t>(::constants::VERIFICATION_COLLATERAL_INFO_SIZE_BYTE_LEN)}));
+                                  resultSize}));
         }
 
         return status;
@@ -472,6 +475,20 @@ Status sgxAttestationVerifyQuoteEx(const uint8_t* rawQuote, uint32_t quoteSize, 
         LOG_ERROR("VerificationCollateralInfo structure size error: {}", ex.what());
         return STATUS_INVALID_PARAMETER;
     }
+}
+
+Status sgxAttestationVerifyQuoteEx(const uint8_t* rawQuote, uint32_t quoteSize, const char *pemPckCertificate, const char* pckCrl, const char* tcbInfoJson,
+                                  const char* qeIdentityJson, uint8_t* verificationCollateralInfo, uint32_t verificationCollateralInfoSize)
+{
+    return verifyQuoteWithCollateralInfo(rawQuote, quoteSize, pemPckCertificate, pckCrl, tcbInfoJson,
+                                         qeIdentityJson, verificationCollateralInfo, verificationCollateralInfoSize, 2);
+}
+
+Status sgxAttestationVerifyQuoteEx2(const uint8_t* rawQuote, uint32_t quoteSize, const char *pemPckCertificate, const char* pckCrl, const char* tcbInfoJson,
+                                   const char* qeIdentityJson, uint8_t* verificationCollateralInfo, uint32_t verificationCollateralInfoSize)
+{
+    return verifyQuoteWithCollateralInfo(rawQuote, quoteSize, pemPckCertificate, pckCrl, tcbInfoJson,
+                                         qeIdentityJson, verificationCollateralInfo, verificationCollateralInfoSize, 3);
 }
 
 Status sgxAttestationVerifyEnclaveReport(const uint8_t* enclaveReport, const char* enclaveIdentity)

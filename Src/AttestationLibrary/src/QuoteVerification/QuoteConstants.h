@@ -128,6 +128,9 @@ const std::array<uint8_t, 16> INTEL_QE_VENDOR_ID = {{ 0x93, 0x9A, 0x72, 0x33, 0x
             VERIFICATION_COLLATERAL_INFO_TCB_STATUS_BYTE_LEN +
             VERIFICATION_COLLATERAL_INFO_TCB_STATUS_BYTE_LEN;
 
+    constexpr size_t VERIFICATION_COLLATERAL_INFO_V3_SIZE_BYTE_LEN =
+            VERIFICATION_COLLATERAL_INFO_SIZE_BYTE_LEN + 2 * (4 + 3 * (8 + 4) + 16 + 16 + 2 + 1 + 2) + 2 * 4;
+
 }}}} // namespace intel { namespace sgx { namespace dcap { namespace constants {
 
 #endif

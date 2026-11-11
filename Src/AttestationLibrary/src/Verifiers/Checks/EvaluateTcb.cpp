@@ -172,16 +172,21 @@ static void applyQeIdentity(const EnclaveIdentity* qeIdentity,
                             const uint16_t qeSvn,
                             std::vector<EvaluationStatus>& componentStatuses,
                             std::vector<std::time_t>& tcbDates,
-                            std::vector<std::string>& qeAdvisoryIds)
+                            std::vector<std::string>& qeAdvisoryIds,
+                            ComponentTcbEvaluation& components)
 {
     if (!qeIdentity)
     {
         return;
     }
     const auto& tcbLevel = qeIdentity->getTcbLevel(qeSvn); // throws StatusNotSupportedException if no TCB level found for the given QE SVN
-    componentStatuses.push_back(mapToEvaluationStatusOrThrow(tcbLevel.getTcbStatus(), VALID_QE_STATUSES));
+    const auto status = mapToEvaluationStatusOrThrow(tcbLevel.getTcbStatus(), VALID_QE_STATUSES);
+    componentStatuses.push_back(status);
     tcbDates.push_back(tcbLevel.getTcbDate());
     qeAdvisoryIds = tcbLevel.getAdvisoryIds();
+    components.qe = {tcbLevel.getTcbDate(), EVALUATION_STATUS_TO_STATUS_MAP.at(status)};
+    components.qeSvn = static_cast<uint16_t>(tcbLevel.getIsvsvn());
+    components.flags |= QVL_COMPONENT_QE;
 }
 
 Status convergeTcbStatuses(const EvaluationStatus platformTcbStatus, const std::vector<EvaluationStatus>& componentStatuses)
@@ -242,6 +247,24 @@ static Status finalizeTcbEvaluation(const EvaluationStatus platformTcbStatus,
     return STATUS_OK;
 }
 
+static void retainPlatformLevel(const TcbLevel& level, ComponentTcbEvaluation& components, bool tdx)
+{
+    const auto& sgxSvns = level.getSgxTcbComponents();
+    for (size_t i = 0; i < components.sgxTcbComponents.size(); ++i)
+    {
+        components.sgxTcbComponents[i] = sgxSvns.at(i).getSvn();
+    }
+    if (tdx)
+    {
+        const auto& tdxSvns = level.getTdxTcbComponents();
+        for (size_t i = 0; i < components.tdxTcbComponents.size(); ++i)
+        {
+            components.tdxTcbComponents[i] = tdxSvns.at(i).getSvn();
+        }
+    }
+    components.pceSvn = static_cast<uint16_t>(level.getPceSvn());
+}
+
 // 4.1.2.5.1
 Status sgxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
                       const uint32_t pceSvn, // in
@@ -250,8 +273,10 @@ Status sgxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
                       const EnclaveIdentity* qeIdentity, // in
                       Status& tcbStatus, // out
                       std::time_t& tcbDate, // out
-                      std::vector<std::string>& advisoryIds) // out
+                      std::vector<std::string>& advisoryIds, // out
+                      ComponentTcbEvaluation& components) // out
 {
+    components = {};
     try
     {
         std::time_t platformTcbDate = 0;
@@ -271,6 +296,7 @@ Status sgxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
                     platformTcbDate = tcbLevel.getTcbDate();
                     platformTcbStatus = mapToEvaluationStatusOrThrow(tcbLevel.getStatus(), VALID_TCB_INFO_STATUSES);
                     platformAdvisoryIds = tcbLevel.getAdvisoryIDs();
+                    retainPlatformLevel(tcbLevel, components, false);
                     break;
                 }
             }
@@ -282,12 +308,14 @@ Status sgxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
             return STATUS_TCB_NOT_SUPPORTED;
         }
 
+        components.platform = {platformTcbDate, EVALUATION_STATUS_TO_STATUS_MAP.at(platformTcbStatus)};
+        components.flags = QVL_COMPONENT_PLATFORM;
         std::vector<EvaluationStatus> componentStatuses = {};
         std::vector<std::time_t> tcbDates = { platformTcbDate };
         std::vector<std::string> qeAdvisoryIds = {};
 
         // 4.1.2.5.1.2: 4.1.2.5.1.2.1 && 4.1.2.5.1.2.2
-        applyQeIdentity(qeIdentity, qeSvn, componentStatuses, tcbDates, qeAdvisoryIds);
+        applyQeIdentity(qeIdentity, qeSvn, componentStatuses, tcbDates, qeAdvisoryIds, components);
 
         // 4.1.2.5.1.3, 4.1.2.5.1.4, 4.1.2.5.1.5, 4.1.2.5.1.6
         return finalizeTcbEvaluation(platformTcbStatus, componentStatuses, tcbDates,
@@ -310,8 +338,10 @@ Status tdxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
                       const EnclaveIdentity* qeIdentity, // in optional
                       Status& tcbStatus, // out
                       std::time_t& tcbDate, // out
-                      std::vector<std::string>& advisoryIds) // out
+                      std::vector<std::string>& advisoryIds, // out
+                      ComponentTcbEvaluation& components) // out
 {
+    components = {};
     try
     {
         std::time_t platformTcbDate = 0;
@@ -335,6 +365,7 @@ Status tdxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
                         platformTcbDate = tcbLevel.getTcbDate();
                         platformTcbStatus = mapToEvaluationStatusOrThrow(tcbLevel.getStatus(), VALID_TCB_INFO_STATUSES);
                         platformAdvisoryIds = tcbLevel.getAdvisoryIDs();
+                        retainPlatformLevel(tcbLevel, components, true);
                         break;
                     }
                 }
@@ -347,6 +378,8 @@ Status tdxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
             return STATUS_TCB_NOT_SUPPORTED;
         }
 
+        components.platform = {platformTcbDate, EVALUATION_STATUS_TO_STATUS_MAP.at(platformTcbStatus)};
+        components.flags = QVL_COMPONENT_PLATFORM | QVL_COMPONENT_TDX_MODULE;
         std::vector<EvaluationStatus> componentStatuses = {};
         std::vector<std::time_t> tcbDates = { platformTcbDate };
         std::vector<std::string> tdxModuleAdvisoryIds = {};
@@ -372,6 +405,7 @@ Status tdxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
                     tdxModuleTcbDate = tcbLevel.getTcbDate();
                     tdxModuleTcbStatus = mapToEvaluationStatusOrThrow(tcbLevel.getStatus(), VALID_TDX_MODULE_STATUSES);
                     tdxModuleAdvisoryIds = tcbLevel.getAdvisoryIDs();
+                    components.tdxModuleSvn = static_cast<uint8_t>(tcbLevel.getTcb().getIsvSvn());
                     break;
                 }
             }
@@ -383,12 +417,18 @@ Status tdxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
 
             componentStatuses.push_back(tdxModuleTcbStatus);
             tcbDates.push_back(tdxModuleTcbDate);
+            components.tdxModule = {tdxModuleTcbDate, EVALUATION_STATUS_TO_STATUS_MAP.at(tdxModuleTcbStatus)};
+        }
+        else
+        {
+            components.tdxModule = components.platform;
+            components.flags |= QVL_COMPONENT_TDX_MODULE_BUNDLED;
         }
 
         std::vector<std::string> qeAdvisoryIds = {};
 
         // 4.1.2.5.1.3: 4.1.2.5.1.3.1 && 4.1.2.5.1.3.2
-        applyQeIdentity(qeIdentity, qeSvn, componentStatuses, tcbDates, qeAdvisoryIds);
+        applyQeIdentity(qeIdentity, qeSvn, componentStatuses, tcbDates, qeAdvisoryIds, components);
 
         // 4.1.2.5.1.4, 4.1.2.5.1.5, 4.1.2.5.1.6, 4.1.2.5.1.7
         return finalizeTcbEvaluation(platformTcbStatus, componentStatuses, tcbDates,

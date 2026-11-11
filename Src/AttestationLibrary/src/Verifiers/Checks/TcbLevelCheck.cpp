@@ -46,6 +46,7 @@ Status checkTcbLevel(const TcbInfo &tcbInfo, const parser::x509::PckCertificate 
     Status launchTcbStatus;
     std::time_t launchTcbDate;
     std::vector<std::string> launchAdvisoryIds;
+    ComponentTcbEvaluation launchComponents;
 
     /// 4.1.2.5.18
     if (quote.getHeader().teeType == dcap::constants::TEE_TYPE_SGX)
@@ -57,13 +58,14 @@ Status checkTcbLevel(const TcbInfo &tcbInfo, const parser::x509::PckCertificate 
                                                      enclaveIdentity,
                                                      launchTcbStatus,
                                                      launchTcbDate,
-                                                     launchAdvisoryIds);
+                                                     launchAdvisoryIds,
+                                                     launchComponents);
         if (evaluationStatus != STATUS_OK)
         {
             return evaluationStatus;
         }
         // copy launch values to current
-        verificationCollateralInfo.addCurrentInfo(launchTcbDate, launchAdvisoryIds, printTCBStatus(launchTcbStatus));
+        verificationCollateralInfo.addCurrentInfo(launchTcbDate, launchAdvisoryIds, printTCBStatus(launchTcbStatus), launchComponents);
     }
     /// 4.1.2.5.19
     else if (quote.getHeader().teeType == dcap::constants::TEE_TYPE_TDX)
@@ -78,7 +80,8 @@ Status checkTcbLevel(const TcbInfo &tcbInfo, const parser::x509::PckCertificate 
                                                      enclaveIdentity,
                                                      launchTcbStatus,
                                                      launchTcbDate,
-                                                     launchAdvisoryIds);
+                                                     launchAdvisoryIds,
+                                                     launchComponents);
         if (evaluationStatus != STATUS_OK)
         {
             return evaluationStatus;
@@ -90,6 +93,7 @@ Status checkTcbLevel(const TcbInfo &tcbInfo, const parser::x509::PckCertificate 
             Status currentTcbStatus;
             std::time_t currentTcbDate = {};
             std::vector<std::string> currentAdvisoryIds;
+            ComponentTcbEvaluation currentComponents;
 
             /// 4.1.2.5.1.20.1
             const auto teeTcbSvn2 = std::vector<uint8_t>(quote.getTeeTcbSvn2().begin(), quote.getTeeTcbSvn2().end());
@@ -102,7 +106,8 @@ Status checkTcbLevel(const TcbInfo &tcbInfo, const parser::x509::PckCertificate 
                                                          enclaveIdentity,
                                                          currentTcbStatus,
                                                          currentTcbDate,
-                                                         currentAdvisoryIds);
+                                                         currentAdvisoryIds,
+                                                         currentComponents);
 
             if (evaluationStatus2 != STATUS_OK)
             {
@@ -111,12 +116,12 @@ Status checkTcbLevel(const TcbInfo &tcbInfo, const parser::x509::PckCertificate 
 
             /// 4.1.2.5.1.20.2
             launchTcbStatus = checkForRelaunch(launchTcbStatus, currentTcbStatus);
-            verificationCollateralInfo.addCurrentInfo(currentTcbDate, currentAdvisoryIds, printTCBStatus(currentTcbStatus));
+            verificationCollateralInfo.addCurrentInfo(currentTcbDate, currentAdvisoryIds, printTCBStatus(currentTcbStatus), currentComponents);
         }
         else
         {
             // copy launch values to current
-            verificationCollateralInfo.addCurrentInfo(launchTcbDate, launchAdvisoryIds, printTCBStatus(launchTcbStatus));
+            verificationCollateralInfo.addCurrentInfo(launchTcbDate, launchAdvisoryIds, printTCBStatus(launchTcbStatus), launchComponents);
         }
     }
     else
@@ -125,7 +130,7 @@ Status checkTcbLevel(const TcbInfo &tcbInfo, const parser::x509::PckCertificate 
         return STATUS_UNSUPPORTED_QUOTE_FORMAT;
     }
 
-    verificationCollateralInfo.addLaunchInfo(launchTcbDate, launchAdvisoryIds, printTCBStatus(launchTcbStatus));
+    verificationCollateralInfo.addLaunchInfo(launchTcbDate, launchAdvisoryIds, printTCBStatus(launchTcbStatus), launchComponents);
     verificationCollateralInfo.addTcbInfoData(tcbInfo);
     verificationCollateralInfo.setFilled();
 

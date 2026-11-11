@@ -250,6 +250,34 @@ QVL_API Status sgxAttestationVerifyQuote(const uint8_t* quote, uint32_t quoteSiz
  */
 QVL_API Status sgxAttestationVerifyQuoteEx(const uint8_t* quote, uint32_t quoteSize, const char *pemPckCertificate, const char* intermediateCrl, const char* tcbInfoJson, const char* qeIdentityJson, uint8_t* verificationCollateralInfo, uint32_t verificationCollateralInfoSize);
 
+enum QvlComponentTcbFlags
+{
+    QVL_COMPONENT_PLATFORM = 1,
+    QVL_COMPONENT_TDX_MODULE = 2,
+    QVL_COMPONENT_QE = 4,
+    QVL_COMPONENT_TDX_MODULE_BUNDLED = 8
+};
+
+/**
+ * Same verification as sgxAttestationVerifyQuoteEx, with collateral-info version 3.
+ * The version-2 fields retain their offsets. The following little-endian fields
+ * are appended: launch and current component evaluations, then the TCB Info and
+ * QE Identity evaluation data numbers (uint32_t each). Each component evaluation
+ * contains uint32_t QvlComponentTcbFlags followed by platform, TDX-module and QE
+ * records, each an int64_t Unix timestamp and uint32_t Status. Absent components
+ * must not be used. TDX module version zero uses the matched platform level and
+ * sets QVL_COMPONENT_TDX_MODULE_BUNDLED.
+ * Each evaluation ends with the matched platform SGX/TDX component SVNs (16 bytes
+ * each), PCE SVN (uint16_t), and module identity level SVN (uint8_t; zero for a
+ * bundled module), and QE identity level SVN (uint16_t). These retain the
+ * selected levels without another lookup.
+ *
+ * This entry point explicitly selects version 3; oversized buffers passed to
+ * sgxAttestationVerifyQuoteEx still receive version 2. The extension is 162 bytes.
+ * Buffer and verification-status semantics otherwise match that entry point.
+ */
+QVL_API Status sgxAttestationVerifyQuoteEx2(const uint8_t* quote, uint32_t quoteSize, const char *pemPckCertificate, const char* intermediateCrl, const char* tcbInfoJson, const char* qeIdentityJson, uint8_t* verificationCollateralInfo, uint32_t verificationCollateralInfoSize);
+
 /**
  *
  * @param enclaveReport - Buffer with serialized Enclave Report  structure.

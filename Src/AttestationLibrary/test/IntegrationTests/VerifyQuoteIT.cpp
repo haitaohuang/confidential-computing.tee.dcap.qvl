@@ -1166,7 +1166,7 @@ TEST_F(VerifyQuoteIT, shouldReturnStatusOKAndNotOverreadWhenVerCollInfoSizeIsLar
     tdxTcbLevels[0].advisoryIds.emplace_back(tcbInfoAdvisory);
     tdxModuleIdentities[0].tcbLevels[0].advisoryIds.emplace_back(tdxModuleIdentityAdvisory);
     positiveTdxTcbInfoV3JsonBody = tcbInfoJsonV3Body("TDX", 3, issueDate, nextUpdate, fmspcStr, pceIdStr,
-                                                     0, 1, tdxTcbLevels, true, tdxModule, true, tdxModuleIdentities);
+                                                     0, 20, tdxTcbLevels, true, tdxModule, true, tdxModuleIdentities);
 
     quoteV4Generator.getHeader().teeType = constants::TEE_TYPE_TDX;
     std::copy_n(tdxModule.mrsigner.begin(), tdxModule.mrsigner.size(), quoteV4Generator.getTdReport().mrSignerSeam.begin());
@@ -1177,6 +1177,7 @@ TEST_F(VerifyQuoteIT, shouldReturnStatusOKAndNotOverreadWhenVerCollInfoSizeIsLar
     EnclaveIdentityVectorModel model(tcbDate);
     model.version = 2;
     model.id = "TD_QE";
+    model.tcbEvaluationDataNumber = 13;
     model.tcbLevels[0].advisoryIds.emplace_back(enclaveIdentityAdvisory);
     positiveQEIdentityV2JsonBody = model.toJSON();
     qeReport.applyEnclaveIdentity(model);
@@ -1232,4 +1233,29 @@ TEST_F(VerifyQuoteIT, shouldReturnStatusOKAndNotOverreadWhenVerCollInfoSizeIsLar
     EXPECT_EQ(STATUS_OK, result);
     const std::vector<std::uint8_t> sentinel(0x100, 0xAB);
     EXPECT_EQ(sentinel, std::vector<std::uint8_t>(verCollInfo.begin() + constants::VERIFICATION_COLLATERAL_INFO_SIZE_BYTE_LEN, verCollInfo.end()));
+    EXPECT_EQ(verCollInfo[2], 2);
+
+    const auto extendedSize = constants::VERIFICATION_COLLATERAL_INFO_V3_SIZE_BYTE_LEN;
+    verCollInfo.assign(extendedSize + 16, 0xAB);
+    EXPECT_EQ(STATUS_INVALID_PARAMETER, sgxAttestationVerifyQuoteEx2(
+            quote.data(), static_cast<uint32_t>(quote.size()), pckPem.c_str(), pckCrl.c_str(),
+            tcbInfoJsonWithSignature.c_str(), qeIdentityJsonWithSignature.c_str(),
+            verCollInfo.data(), static_cast<uint32_t>(extendedSize - 1)));
+    EXPECT_EQ(verCollInfo, std::vector<uint8_t>(extendedSize + 16, 0xAB));
+
+    EXPECT_EQ(STATUS_OK, sgxAttestationVerifyQuoteEx2(
+            quote.data(), static_cast<uint32_t>(quote.size()), pckPem.c_str(), pckCrl.c_str(),
+            tcbInfoJsonWithSignature.c_str(), qeIdentityJsonWithSignature.c_str(),
+            verCollInfo.data(), static_cast<uint32_t>(verCollInfo.size())));
+    EXPECT_EQ(verCollInfo[2], 3);
+    EXPECT_EQ(std::vector<uint8_t>(verCollInfo.begin() + extendedSize, verCollInfo.end()),
+              std::vector<uint8_t>(16, 0xAB));
+    const auto base = constants::VERIFICATION_COLLATERAL_INFO_SIZE_BYTE_LEN;
+    EXPECT_EQ(verCollInfo[base], QVL_COMPONENT_PLATFORM | QVL_COMPONENT_TDX_MODULE | QVL_COMPONENT_QE);
+    EXPECT_EQ(std::vector<uint8_t>(verCollInfo.begin() + base, verCollInfo.begin() + base + 77),
+              std::vector<uint8_t>(verCollInfo.begin() + base + 77, verCollInfo.begin() + base + 154));
+    EXPECT_EQ(verCollInfo[28], 13); // Aggregate evaluation data number.
+    EXPECT_EQ(verCollInfo[base + 75], model.tcbLevels[0].isvsvn);
+    EXPECT_EQ(verCollInfo[base + 154], 20);
+    EXPECT_EQ(verCollInfo[base + 158], 13);
 }

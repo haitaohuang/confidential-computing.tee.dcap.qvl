@@ -50,6 +50,8 @@ public:
     std::set<std::string> getCurrentAdvisoryIds() const { return _currentAdvisoryIds; }
     std::string getLaunchTcbStatus() const { return _launchTcbStatus; }
     std::string getCurrentTcbStatus() const { return _currentTcbStatus; }
+    const ComponentTcbEvaluation& getLaunchComponents() const { return _launchComponents; }
+    const ComponentTcbEvaluation& getCurrentComponents() const { return _currentComponents; }
 
     void checkVerCollInfoEmpty() const;
 

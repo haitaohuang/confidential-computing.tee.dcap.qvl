@@ -399,6 +399,12 @@ TEST_F(QuoteV5VerifierUT, shouldVerifyTdx15CorrectlyWhenTdxModuleVersionIsZero)
     ASSERT_TRUE(quote.parse(quoteBin));
     EXPECT_EQ(STATUS_OK, dcap::QuoteVerifier{}.verify(quote, pck, crl, tcbInfoJson, &enclaveIdentityV2, enclaveReportVerifier, verificationCollateralInfo));
     verificationCollateralInfo.checkVerCollInfoFilled(expectedIssueDates, expectedNextUpdates, expectedEvaluationNumbers, currentTime-5, currentTime-5, {}, {}, "UpToDate", "UpToDate");
+    const auto& components = verificationCollateralInfo.getLaunchComponents();
+    EXPECT_EQ(components.flags, QVL_COMPONENT_PLATFORM | QVL_COMPONENT_TDX_MODULE |
+                                QVL_COMPONENT_QE | QVL_COMPONENT_TDX_MODULE_BUNDLED);
+    EXPECT_EQ(components.platform.date, currentTime-5);
+    EXPECT_EQ(components.tdxModule.date, components.platform.date);
+    EXPECT_EQ(components.qe.date, identityTcbLevel.getTcbDate());
 }
 
 TEST_F(QuoteV5VerifierUT, shouldReturnStatusTcbTdRelaunchAdvisedWhenTdx15AndTdxModuleVersionIs0)
@@ -479,6 +485,18 @@ TEST_F(QuoteV5VerifierUT, shouldReturnStatusTcbTdRelaunchAdvisedWhenTdx15AndTdxM
     ASSERT_TRUE(quote.parse(quoteBin));
     EXPECT_EQ(STATUS_TCB_TD_RELAUNCH_ADVISED, dcap::QuoteVerifier{}.verify(quote, pck, crl, tcbInfoJson, &enclaveIdentityV2, enclaveReportVerifier, verificationCollateralInfo));
     verificationCollateralInfo.checkVerCollInfoFilled(expectedIssueDates, expectedNextUpdates, expectedEvaluationNumbers, tdxModuleTcbDate-1, tdxModuleTcbDate, { tdxModuleAdvisoryId }, {  }, "TDRelaunchAdvised", "UpToDate");
+    const auto& launch = verificationCollateralInfo.getLaunchComponents();
+    const auto& current = verificationCollateralInfo.getCurrentComponents();
+    EXPECT_EQ(launch.flags, QVL_COMPONENT_PLATFORM | QVL_COMPONENT_TDX_MODULE | QVL_COMPONENT_QE);
+    EXPECT_EQ(current.flags, launch.flags);
+    EXPECT_EQ(launch.platform.date, currentTime-5);
+    EXPECT_EQ(current.platform.date, currentTime-5);
+    EXPECT_EQ(launch.tdxModule.date, tdxModuleTcbDate-1);
+    EXPECT_EQ(current.tdxModule.date, tdxModuleTcbDate);
+    EXPECT_EQ(launch.tdxModule.status, STATUS_TCB_OUT_OF_DATE);
+    EXPECT_EQ(current.tdxModule.status, STATUS_OK);
+    EXPECT_EQ(launch.qe.date, identityTcbLevel.getTcbDate());
+    EXPECT_EQ(current.qe.date, launch.qe.date);
 }
 
 TEST_F(QuoteV5VerifierUT, shouldReturnStatusTcbTdRelaunchAdvisedConfigurationNeededWhenTdx15AndTdxModuleVersionIs0)

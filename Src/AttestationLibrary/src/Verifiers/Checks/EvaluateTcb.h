@@ -35,6 +35,7 @@
 #include <SgxEcdsaAttestation/AttestationParsers.h>
 #include "SgxEcdsaAttestation/QuoteVerification.h"
 #include "Utils/Optional.h"
+#include "QuoteVerification/VerificationCollateralInfo.h"
 
 namespace intel::sgx::dcap {
 
@@ -45,7 +46,8 @@ namespace intel::sgx::dcap {
                           const dcap::parser::json::EnclaveIdentity *qeIdentity, // in optional
                           Status& tcbStatus, // out
                           std::time_t& tcbDate, // out
-                          std::vector<std::string>& advisoryIds); // out
+                          std::vector<std::string>& advisoryIds, // out
+                          ComponentTcbEvaluation& components); // out
 
     Status tdxEvaluateTCB(const std::vector<uint8_t>& tcbComponents, // in
                           const uint32_t pceSvn, // in
@@ -55,7 +57,8 @@ namespace intel::sgx::dcap {
                           const dcap::parser::json::EnclaveIdentity* qeIdentity, // in optional
                           Status& tcbStatus, // out
                           std::time_t& tcbDate, // out
-                          std::vector<std::string>& advisoryIds); // out
+                          std::vector<std::string>& advisoryIds, // out
+                          ComponentTcbEvaluation& components); // out
 
 } // intel::sgx::dcap
 
